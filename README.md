@@ -177,3 +177,8 @@ cancelled
 Проект создан как учебный Telegram-бот на Python/aiogram для портфолио.
 
 Автор: Vitaly Melchakov
+
+## Контакты
+
+- GitHub: https://github.com/vitaly-melchakov
+- Telegram: @pomposso
