@@ -32,13 +32,15 @@ def opisanie_kb(category):
     products = get_products_by_category(category)
 
     for product in products:
-        product_id = product[0]
-        name = product[1]
-
         builder.button(
-            text=name,
-            callback_data=f"product:{product_id}"
+            text=product[1],
+            callback_data=f"product:{product[0]}"
         )
+
+    builder.button(
+        text="⬅️ Назад к категориям",
+        callback_data="back_to_categories"
+    )
 
     builder.adjust(1)
     return builder.as_markup()

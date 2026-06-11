@@ -6,36 +6,71 @@ from keyboards.reply import after_cart
 
 from states.shop import Shop
 
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile,  InputMediaPhoto
 from database import get_product_by_id
-
-
 
 
 router = Router()
 
+CATALOG_PHOTO = "images/catalog.png"
+
+
 @router.message(F.text == "Каталог") 
 async def handler_catalog(message:types.Message, state:FSMContext ):
-    await state.set_state(Shop.catalog)   #пользователь в каталоге
-    await message.answer ("Выбери категорию", reply_markup=inkb)
+    await state.set_state(Shop.catalog)   
+    await message.answer ("Выберите категорию", reply_markup=inkb)
     
 
 
+@router.callback_query(Shop.catalog, F.data.startswith("cat:"))
+async def callback_cat(callback: types.CallbackQuery):
+    category = callback.data.split(":", 1)[1]
 
-@router.callback_query(Shop.catalog, F.data.startswith("cat:"))  #пользователь выбрал категорию
-async def callback_cat(callback: types.CallbackQuery, state: FSMContext):
-    category = callback.data.split(":", 1)[1]  
+    await callback.message.edit_media(
+        media=InputMediaPhoto(
+            media=FSInputFile(CATALOG_PHOTO),
+            caption="🛒 Выберите товар:"
+        ),
+        reply_markup=opisanie_kb(category)
+    )
 
-    await callback.message.answer ("Выбери товар 🛒", reply_markup=opisanie_kb(category))
-    await callback.answer()  #чтобы кнопка не залипала просто
+    await callback.answer()
 
 
-@router.callback_query(Shop.catalog, F.data.startswith("back_cat:")) # пользовать вернулся назад к категориям
-async def callback_back_cat(callback: types.CallbackQuery, state: FSMContext):
-    category = callback.data.split(":", 1)[1]  
-    await callback.message.answer ("Выбери товар 🛒", reply_markup=opisanie_kb(category))
-    await callback.answer()  #чтобы кнопка не залипала просто
 
+
+
+
+@router.callback_query(F.data == "back_to_categories")
+async def back_to_categories(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(Shop.catalog)
+
+    await callback.message.edit_media(
+        media=InputMediaPhoto(
+            media=FSInputFile(CATALOG_PHOTO),
+            caption="🍽 Каталог\n\nВыберите категорию:"
+        ),
+        reply_markup=inkb
+    )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("back_cat:"))
+async def back_to_products(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(Shop.catalog)
+
+    category = callback.data.split(":", 1)[1]
+
+    await callback.message.edit_media(
+        media=InputMediaPhoto(
+            media=FSInputFile(CATALOG_PHOTO),
+            caption="🛒 Выберите товар:"
+        ),
+        reply_markup=opisanie_kb(category)
+    )
+
+    await callback.answer()
     
 
 
@@ -58,16 +93,12 @@ async def callback_add(callback: types.CallbackQuery, state: FSMContext):
 
     await state.update_data(cart=cart)
 
-    await callback.answer(f"{name} добавлен в корзину")
-    await callback.message.answer(
-    "Товар добавлен в корзину 🛒",
-    reply_markup=after_cart
-)
+    await callback.answer(f"✅ {name} добавлен в корзину")
 
 
 
 @router.callback_query(Shop.catalog, F.data.startswith("product:"))
-async def callback_product(callback: types.CallbackQuery, state: FSMContext):
+async def callback_product(callback: types.CallbackQuery):
     product_id = callback.data.split(":", 1)[1]
 
     product = get_product_by_id(product_id)
@@ -82,11 +113,17 @@ async def callback_product(callback: types.CallbackQuery, state: FSMContext):
     category = product[3]
     photo = product[4]
 
-    text = f"{name}\n\nЦена: {price} дин"
+    text = (
+        f"🍔 {name}\n\n"
+        f"💰 Цена: {price} дин\n\n"
+        f"Добавьте товар в корзину или вернитесь назад."
+    )
 
-    await callback.message.answer_photo(
-        photo=FSInputFile(photo),
-        caption=text,
+    await callback.message.edit_media(
+        media=InputMediaPhoto(
+            media=FSInputFile(photo),
+            caption=text
+        ),
         reply_markup=add_kb(product_id, category)
     )
 
@@ -94,6 +131,6 @@ async def callback_product(callback: types.CallbackQuery, state: FSMContext):
 
 
 @router.message(F.text == "Продолжить покупки")
-async def handler_catalog(message:types.Message, state:FSMContext ):
-    await state.set_state(Shop.catalog)   #пользователь в каталоге
-    await message.answer ( "Выбери товар:", reply_markup=inkb)
+async def handler_continue_shopping(message:types.Message, state:FSMContext ):
+    await state.set_state(Shop.catalog)  
+    await message.answer ( "Выберите товар:", reply_markup=inkb)
