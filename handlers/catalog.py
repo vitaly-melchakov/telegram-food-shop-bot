@@ -1,16 +1,23 @@
 from aiogram.fsm.context import FSMContext
 from aiogram import types, Router, F
 
-from keyboards.inline import inkb, add_kb, opisanie_kb
-from keyboards.reply import after_cart
+from keyboards.inline import inkb, add_kb, opisanie_kb, after_add_to_cart_kb
 
 from states.shop import Shop
 
-from aiogram.types import FSInputFile,  InputMediaPhoto
+from aiogram.types import InputMediaPhoto
 from database import get_product_by_id
 
 
+from media import CATALOG_PHOTO_ID
+
+
+
+
 router = Router()
+
+def get_catalog_banner_file():
+    return CATALOG_PHOTO_ID
 
 CATALOG_PHOTO = "images/catalog.png"
 
@@ -28,7 +35,7 @@ async def callback_cat(callback: types.CallbackQuery):
 
     await callback.message.edit_media(
         media=InputMediaPhoto(
-            media=FSInputFile(CATALOG_PHOTO),
+            media=CATALOG_PHOTO_ID,
             caption="🛒 Выберите товар:"
         ),
         reply_markup=opisanie_kb(category)
@@ -42,18 +49,31 @@ async def callback_cat(callback: types.CallbackQuery):
 
 
 @router.callback_query(F.data == "back_to_categories")
-async def back_to_categories(callback: types.CallbackQuery, state: FSMContext):
+async def callback_back_to_categories(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
     await state.set_state(Shop.catalog)
 
-    await callback.message.edit_media(
-        media=InputMediaPhoto(
-            media=FSInputFile(CATALOG_PHOTO),
-            caption="🍽 Каталог\n\nВыберите категорию:"
-        ),
-        reply_markup=inkb
-    )
+    # Если текущее сообщение уже с фото — просто меняем media
+    if callback.message.photo:
+        media = InputMediaPhoto(
+            media=get_catalog_banner_file(),
+            caption="🍔 Выберите категорию:"
+        )
 
-    await callback.answer()
+        await callback.message.edit_media(
+            media=media,
+            reply_markup=inkb
+        )
+
+    # Если текущее сообщение обычное текстовое — отправляем фото заново
+    else:
+        await callback.message.answer_photo(
+            photo=get_catalog_banner_file(),
+            caption="🍔 Выберите категорию:",
+            reply_markup=inkb
+        )
+
+        await callback.message.delete()
 
 
 @router.callback_query(F.data.startswith("back_cat:"))
@@ -64,7 +84,7 @@ async def back_to_products(callback: types.CallbackQuery, state: FSMContext):
 
     await callback.message.edit_media(
         media=InputMediaPhoto(
-            media=FSInputFile(CATALOG_PHOTO),
+            media=CATALOG_PHOTO_ID,
             caption="🛒 Выберите товар:"
         ),
         reply_markup=opisanie_kb(category)
@@ -85,6 +105,8 @@ async def callback_add(callback: types.CallbackQuery, state: FSMContext):
         return
 
     name = product[1]
+    price = product[2]
+    category = product[3]
 
     data = await state.get_data()
     cart = data.get("cart", {})
@@ -92,6 +114,18 @@ async def callback_add(callback: types.CallbackQuery, state: FSMContext):
     cart[product_id] = cart.get(product_id, 0) + 1
 
     await state.update_data(cart=cart)
+
+    text = (
+        f"✅ Товар добавлен в корзину!\n\n"
+        f"🍔 {name}\n"
+        f"💰 Цена: {price} дин.\n\n"
+        f"Что делаем дальше?"
+    )
+
+    await callback.message.edit_caption(
+        caption=text,
+        reply_markup=after_add_to_cart_kb(product_id, category)
+    )
 
     await callback.answer(f"✅ {name} добавлен в корзину")
 
@@ -111,7 +145,7 @@ async def callback_product(callback: types.CallbackQuery):
     name = product[1]
     price = product[2]
     category = product[3]
-    photo = product[4]
+    product_photo = product[4]
 
     text = (
         f"🍔 {name}\n\n"
@@ -121,7 +155,7 @@ async def callback_product(callback: types.CallbackQuery):
 
     await callback.message.edit_media(
         media=InputMediaPhoto(
-            media=FSInputFile(photo),
+            media=product_photo,
             caption=text
         ),
         reply_markup=add_kb(product_id, category)
