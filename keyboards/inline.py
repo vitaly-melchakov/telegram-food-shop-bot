@@ -7,11 +7,33 @@ from database import get_products_by_category, get_product_by_id
 
 router = Router()
 
-inkb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🍔 Burgers", callback_data="cat:burgers")],
-    [InlineKeyboardButton(text="🍟 Sides", callback_data="cat:sides")],
-    [InlineKeyboardButton(text="🥤Drinks", callback_data="cat:drinks")]
-]
+inkb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🍔 Burgers",
+                callback_data="cat:burgers"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🍟 Sides",
+                callback_data="cat:sides"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🥤 Drinks",
+                callback_data="cat:drinks"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🏠 Главное меню",
+                callback_data="main_menu"
+            )
+        ]
+    ]
 )
 
 def main_inline_kb():
@@ -27,38 +49,78 @@ def main_inline_kb():
     )
 
 
+def start_kb(is_admin: bool = False):
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="🍔 Открыть каталог",
+                callback_data="open_catalog"
+            )
+        ]
+    ]
 
-def after_add_to_cart_kb(product_id: str, category: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    if is_admin:
+        buttons.append(
             [
                 InlineKeyboardButton(
-                    text="🛒 Перейти в корзину",
-                    callback_data="cart:open"
+                    text="👨‍💻 Админ-панель",
+                    callback_data="admin_panel"
                 )
-            ],
+            ]
+        )
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def after_add_to_cart_kb(product_id, category):
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="✅ Оформить заказ",
+        callback_data="cart:checkout"
+    )
+
+    builder.button(
+        text="🛒 Посмотреть корзину",
+        callback_data="cart"
+    )
+
+    builder.button(
+        text="➕ Добавить ещё",
+        callback_data="back_to_categories"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def products_list_kb(products):
+    buttons = []
+
+    for product in products:
+        product_id = product[0]
+        name = product[1]
+        price = product[2]
+
+        buttons.append(
             [
                 InlineKeyboardButton(
-                    text="➕ Продолжить покупки",
-                    callback_data="back_to_categories"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⬅️ Открыть карточку товара",
+                    text=f"{name} — {price} дин.",
                     callback_data=f"product:{product_id}"
                 )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📋 К списку товаров",
-                    callback_data=f"cat:{category}"
-                )
-            ],
+            ]
+        )
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="🔙 К категориям",
+                callback_data="back_to_categories"
+            )
         ]
     )
 
-
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def remove_kb():
     return InlineKeyboardMarkup(
@@ -97,7 +159,7 @@ def checkout_confirm_kb():
             [
                 InlineKeyboardButton(
                     text="⬅️ Вернуться в корзину",
-                    callback_data="cart:open"
+                    callback_data="cart"
                 )
             ],
             [
@@ -129,30 +191,10 @@ def order_success_kb():
 
 
 
-def cart_inline_kb(cart: dict | None = None):
-    keyboard = []
+def cart_inline_kb(cart: dict):
+    buttons = []
 
-    if not cart:
-        keyboard.append(
-            [
-                InlineKeyboardButton(
-                    text="➕ Продолжить покупки",
-                    callback_data="back_to_categories"
-                )
-            ]
-        )
-
-        return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-    for product_id in cart:
-        product = get_product_by_id(product_id)
-
-        if product is None:
-            continue
-
-        name = product[1]
-
-    keyboard.append(
+    buttons.append(
         [
             InlineKeyboardButton(
                 text="✅ Оформить заказ",
@@ -161,16 +203,24 @@ def cart_inline_kb(cart: dict | None = None):
         ]
     )
 
-    keyboard.append(
-            [
-                InlineKeyboardButton(
-                    text=f"➖ {name}",
-                    callback_data=f"cart:remove:{product_id}"
-                )
-            ]
-        )
+    for product_id, quantity in cart.items():
+        product = get_product_by_id(product_id)
 
-    keyboard.append(
+        if product is None:
+            continue
+
+        name = product[1]
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text=f"❌ Убрать {name} x{quantity}",
+                 callback_data=f"remove:{product_id}"
+            )
+        ]
+    )
+
+    buttons.append(
         [
             InlineKeyboardButton(
                 text="🧹 Очистить корзину",
@@ -179,7 +229,7 @@ def cart_inline_kb(cart: dict | None = None):
         ]
     )
 
-    keyboard.append(
+    buttons.append(
         [
             InlineKeyboardButton(
                 text="➕ Продолжить покупки",
@@ -187,16 +237,17 @@ def cart_inline_kb(cart: dict | None = None):
             )
         ]
     )
-    keyboard.append(
-    [
-        InlineKeyboardButton(
-            text="🏠 Главное меню",
-            callback_data="main:menu"
-        )
-    ]
-)
 
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="🏠 Главное меню",
+                callback_data="main_menu"
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 
@@ -250,17 +301,41 @@ def admin_order_kb(order_id: int):
             ],
             [
                 InlineKeyboardButton(
-                    text="❌ Отменить",
-                    callback_data=f"admin_cancel:{order_id}"
+                    text="🆕 Отметить как новый",
+                    callback_data=f"admin_new:{order_id}"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="🔄 Новый",
-                    callback_data=f"admin_new:{order_id}"
+                    text="❌ Отменить",
+                    callback_data=f"admin_cancel:{order_id}"
+                )
+            ],
+             [
+                InlineKeyboardButton(
+                    text="👨‍💻 Админ-панель",
+                    callback_data="admin_panel"
                 )
             ]
         ]
     )
 
     return keyboard
+
+def empty_cart_inline_kb():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➕ Продолжить покупки",
+                    callback_data="back_to_categories"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏠 Главное меню",
+                    callback_data="main_menu"
+                )
+            ]
+        ]
+    )

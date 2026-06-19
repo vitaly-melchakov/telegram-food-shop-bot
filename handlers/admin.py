@@ -1,315 +1,267 @@
-from aiogram import Router, types, F
-from aiogram.filters import Command
-from database import get_orders, get_order_items, update_order_status, get_orders_by_status
-from keyboards.inline import admin_order_kb
+from aiogram import Router, F
+
+from database import get_orders, get_order_items, update_order_status, get_orders_by_status, get_order_by_id
 from config import ADMIN_ID
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from aiogram.types import CallbackQuery
+
+from keyboards.admin_kb import admin_panel_kb, admin_order_kb
 
 router = Router()
 
 
 
-def build_orders_text(orders):
-    status_names = {
-        "new": "🆕 новый",
-        "done": "✅ выполнен",
-        "cancelled": "❌ отменён"
-    }
+ORDER_STATUS_MAP = {
+    "new": "🆕 новый",
+    "done": "✅ выполнен",
+    "cancelled": "❌ отменён",
+}
 
-    text = ""
+def format_order_status(status):
+    return ORDER_STATUS_MAP.get(status, status)
 
-    for order in orders:
-        order_id = order[0]
-        username = order[2]
-        full_name = order[3]
-        total_price = order[4]
-        created_at = order[5]
-        status = order[6]
+async def safe_edit_text(callback: CallbackQuery, text: str, reply_markup=None) -> bool:
+    try:
+        if callback.message.photo:
+            await callback.message.edit_caption(
+                caption=text,
+                reply_markup=reply_markup
+            )
+        else:
+            await callback.message.edit_text(
+                text,
+                reply_markup=reply_markup
+            )
 
-        text += (
-            f"🧾 Заказ #{order_id}\n"
-            f"👤 Клиент: {full_name}\n"
-            f"🔗 Username: @{username}\n"
-            f"💰 Сумма: {total_price} дин\n"
-            f"🕒 Дата: {created_at}\n"
-            f"📌 Статус: {status_names.get(status, status)}\n\n"
-            f"Товары:\n"
+        return True
+
+    except TelegramBadRequest as e:
+        error_text = str(e)
+
+        if "message is not modified" in error_text:
+            await callback.answer("Без изменений")
+            return False
+
+        if "there is no text in the message to edit" in error_text:
+            await callback.message.edit_caption(
+                caption=text,
+                reply_markup=reply_markup
+            )
+            return True
+
+        raise
+
+
+
+
+
+@router.callback_query(F.data.startswith("admin_orders:"))
+async def admin_orders_handler(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+
+    status = callback.data.split(":")[1]
+
+    if status == "all":
+        orders = get_orders(limit=10)
+        title = "📦 Все заказы"
+
+    elif status == "new":
+        orders = get_orders_by_status("new", limit=10)
+        title = "🆕 Новые заказы"
+
+    elif status == "done":
+        orders = get_orders_by_status("done", limit=10)
+        title = "✅ Выполненные заказы"
+
+    elif status == "cancelled":
+        orders = get_orders_by_status("cancelled", limit=10)
+        title = "❌ Отменённые заказы"
+
+    else:
+        await callback.answer("Неизвестный фильтр", show_alert=True)
+        return
+
+    if not orders:
+        await safe_edit_text(
+            callback,
+            f"{title}\n\nЗаказов пока нет.",
+            reply_markup=admin_panel_kb()
         )
 
-        items = get_order_items(order_id)
-
-        for item in items:
-            product_name = item[0]
-            quantity = item[1]
-            price = item[2]
-
-            item_total = quantity * price
-
-            text += f"• {product_name} x{quantity} — {item_total} дин\n"
-
-        text += "\n" + "—" * 20 + "\n\n"
-
-    return text
-
-
-
-@router.message(Command("orders"))
-async def cmd_orders(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("У тебя нет доступа к этой команде.")
-        return
-
-    orders = get_orders(10)
-
-    if not orders:
-        await message.answer("Заказов пока нет.")
-        return
-
-    text = "📦 Последние заказы:\n\n"
-    text += build_orders_text(orders)
-
-
-
-    await message.answer(text)
-
-
-@router.message(Command("order_done"))
-async def cmd_order_done(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("У тебя нет доступа к этой команде.")
-        return
-  
-
-    parts = message.text.split()
-
-    if len(parts) != 2: 
-        await message.answer( "Используй команду так:\n"
-        "/order_done НОМЕР_ЗАКАЗА\n\n"
-        "Например:\n"
-        "/order_done 3")
-        return
-
-    order_id = parts[1]
-
-    if not order_id.isdigit():
-        await message.answer("ID заказа должен быть числом.")
-        return
-
-    update_order_status(int(order_id), "done")
-
-    await message.answer(f"Заказ #{order_id} отмечен как выполненный ✅")
-
-@router.message(Command("order_new"))   
-async def cmd_order_new(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("У тебя нет доступа к этой команде.")
-        return
-
-    parts = message.text.split()
-
-    if len(parts) != 2:
-        await message.answer(
-            "Используй команду так:\n"
-            "/order_new НОМЕР_ЗАКАЗА\n\n"
-            "Например:\n"
-            "/order_new 3"
-        )
-        return
-
-    order_id = parts[1]
-
-    if not order_id.isdigit():
-        await message.answer("ID заказа должен быть числом.")
-        return
-
-    update_order_status(int(order_id), "new")
-
-    await message.answer(f"Заказ #{order_id} снова отмечен как новый 🔄")
-
-
-
-  
-@router.message(Command("order_cancel"))  
-async def cmd_order_cancel(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("У тебя нет доступа к этой команде.")
-        return
-
-    parts = message.text.split()
-
-    if len(parts) != 2:
-        await message.answer(
-            "Используй команду так:\n"
-            "/order_cancel НОМЕР_ЗАКАЗА\n\n"
-            "Например:\n"
-            "/order_cancel 3"
-        )
-        return
-
-    order_id = parts[1]
-
-    if not order_id.isdigit():
-        await message.answer("ID заказа должен быть числом.")
-        return
-
-    update_order_status(int(order_id), "cancelled")
-
-    await message.answer(f"Заказ #{order_id} отменён ❌")
-
-
-@router.message(Command("orders_new"))
-async def cmd_orders_new(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("У тебя нет доступа к этой команде.")
-        return
-
-    orders = get_orders_by_status("new", 10)
-
-    if not orders:
-        await message.answer("Новых заказов пока нет.")
-        return
-
-    
-    text = "🆕 Новые заказы:\n\n"
-    text += build_orders_text(orders)
-
-
-    await message.answer(text)
-
-def update_admin_order_text(text: str, status_text: str):   
-    if "\n\nСтатус:" in text:
-        text = text.split("\n\nСтатус:")[0]
-
-    return f"{text}\n\nСтатус: {status_text}"
-
-
-@router.message(Command("orders_done"))
-async def cmd_orders_done(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("У тебя нет доступа к этой команде.")
-        return
-
-    orders = get_orders_by_status("done", 10)
-
-    if not orders:
-        await message.answer("Выполненных заказов пока нет.")
-        return
-
-
-    text = "✅ Выполненные заказы:\n\n"
-    text += build_orders_text(orders)
-
-
-   
-    await message.answer(text)
-
-
-
-
-@router.message(Command("orders_cancelled"))
-async def cmd_orders_cancelled(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("У тебя нет доступа к этой команде.")
-        return
-
-    orders = get_orders_by_status("cancelled", 10)
-
-    if not orders:
-        await message.answer("Отменённых заказов пока нет.")
-        return
-
-
-    text = "❌ Отменённые заказы:\n\n"
-    text += build_orders_text(orders)
-
-
-    await message.answer(text)
-
-
-@router.message(Command("admin_help"))
-async def cmd_admin_help(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("У тебя нет доступа к этой команде.")
+        await callback.answer()
         return
 
     text = (
-        "⚙️ Админ-команды:\n\n"
-        "📦 /orders — показать последние заказы\n"
-        "🆕 /orders_new — показать новые заказы\n"
-        "✅ /orders_done — показать выполненные заказы\n"
-        "❌ /orders_cancelled — показать отменённые заказы\n\n"
-        "✅ /order_done ID — отметить заказ выполненным\n"
-        "🔄 /order_new ID — вернуть заказ в новые\n"
-        "❌ /order_cancel ID — отменить заказ\n\n"
-        "Пример:\n"
-        "/order_done 12"
+        f"{title}\n\n"
+        "Показаны последние 10 заказов.\n"
+        "Выберите заказ:"
     )
 
-    await message.answer(text)
+    await safe_edit_text(
+        callback,
+        text,
+        reply_markup=admin_orders_list_kb(orders)
+    )
 
+    await callback.answer()
+
+
+
+
+def admin_orders_list_kb(orders):
+    builder = InlineKeyboardBuilder()
+
+    for order in orders:
+        order_id = order[0]
+        total_price = order[4]
+        order_status = format_order_status(order[5])
+
+        builder.button(
+            text=f"📦 Заказ №{order_id} — {total_price} дин. — {order_status}",
+            callback_data=f"admin_order:{order_id}"
+        )
+
+    builder.button(
+        text="👨‍💻 Админ-панель",
+        callback_data="admin_panel"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+@router.callback_query(F.data == "admin_panel")
+async def admin_panel_handler(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+
+    text = (
+        "👨‍💻 Админ-панель\n\n"
+        "Выберите, какие заказы показать:"
+    )
+
+    if callback.message.photo:
+        await callback.message.edit_caption(
+            caption=text,
+            reply_markup=admin_panel_kb()
+        )
+    else:
+        await callback.message.edit_text(
+            text,
+            reply_markup=admin_panel_kb()
+        )
+
+    await callback.answer()
 
 @router.callback_query(F.data.startswith("admin_done:"))
-async def callback_admin_done(callback: types.CallbackQuery):
-    order_id = int(callback.data.split(":")[1])
-
+async def admin_done_handler(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
-        await callback.answer("У вас нет доступа", show_alert=True)
+        await callback.answer("Нет доступа", show_alert=True)
         return
+
+    order_id = int(callback.data.split(":")[1])
 
     update_order_status(order_id, "done")
 
-    new_text = update_admin_order_text(
-        callback.message.text,
-        "✅ выполнен"
-    )
+    changed = await show_admin_order_card(callback, order_id)
 
-    await callback.message.edit_text(
-        new_text,
-        reply_markup=admin_order_kb(order_id)
-    )
+    if changed:
+        await callback.answer("Статус изменён")
 
-    await callback.answer("Заказ отмечен как выполненный ✅")
 
 @router.callback_query(F.data.startswith("admin_cancel:"))
-async def callback_admin_cancel(callback: types.CallbackQuery):
-    order_id = int(callback.data.split(":")[1])
-
+async def admin_cancel_handler(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
-        await callback.answer("У вас нет доступа", show_alert=True)
+        await callback.answer("Нет доступа", show_alert=True)
         return
+
+    order_id = int(callback.data.split(":")[1])
 
     update_order_status(order_id, "cancelled")
 
-    new_text = update_admin_order_text(
-        callback.message.text,
-        "❌ отменён"
-    )
+    changed = await show_admin_order_card(callback, order_id)
 
-    await callback.message.edit_text(
-        new_text,
-        reply_markup=admin_order_kb(order_id)
-    )
-
-    await callback.answer("Заказ отменён ❌")
+    if changed:
+        await callback.answer("Статус изменён")
 
 
 @router.callback_query(F.data.startswith("admin_new:"))
-async def callback_admin_new(callback: types.CallbackQuery):
-    order_id = int(callback.data.split(":")[1])
-
+async def admin_new_handler(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
-        await callback.answer("У вас нет доступа", show_alert=True)
+        await callback.answer("Нет доступа", show_alert=True)
         return
+
+    order_id = int(callback.data.split(":")[1])
 
     update_order_status(order_id, "new")
 
-    new_text = update_admin_order_text(
-        callback.message.text,
-        "🆕 новый"
+    changed = await show_admin_order_card(callback, order_id)
+
+    if changed:
+        await callback.answer("Статус изменён")
+
+
+async def show_admin_order_card(callback: CallbackQuery, order_id: int) -> bool:
+    order = get_order_by_id(order_id)
+
+    if not order:
+        await callback.answer("Заказ не найден", show_alert=True)
+        return False
+
+    items = get_order_items(order_id)
+
+    order_id = order[0]
+    full_name = order[1]
+    username = order[2]
+    user_id = order[3]
+    total_price = order[4]
+    status = order[5]
+    created_at = order[6]
+
+    username_text = f"@{username}" if username else "не указан"
+
+    text = (
+        f"📦 Заказ №{order_id}\n\n"
+        f"Клиент: {full_name}\n"
+        f"🔗 Username: {username_text}\n"
+        f"User ID: {user_id}\n\n"
+        f"Заказ:\n"
     )
 
-    await callback.message.edit_text(
-        new_text,
+    for item in items:
+        product_name = item[0]
+        quantity = item[1]
+        price = item[2]
+
+        text += f"• {product_name} x{quantity} — {price * quantity} дин.\n"
+
+    text += (
+        f"\nИтого: {total_price} дин.\n"
+        f"Статус: {format_order_status(status)}\n"
+        f"Дата: {created_at}"
+    )
+
+    changed = await safe_edit_text(
+        callback,
+        text,
         reply_markup=admin_order_kb(order_id)
     )
 
-    await callback.answer("Заказ снова отмечен как новый 🔄")
+    return changed
+
+@router.callback_query(F.data.startswith("admin_order:"))
+async def admin_order_card_handler(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+
+    order_id = int(callback.data.split(":")[1])
+
+    changed = await show_admin_order_card(callback, order_id)
+
+    if changed:
+        await callback.answer()

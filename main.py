@@ -3,7 +3,6 @@ from aiogram import Bot, Dispatcher
 
 
 
-
 from config import BOT_TOKEN
 
 from handlers.start import router as start_router
@@ -11,7 +10,7 @@ from handlers.catalog import router as catalog_router
 from handlers.cart import router as cart_router
 from handlers.order import router as order_router
 from handlers.admin import router as admin_router
-from handlers.echo import router as echo_router
+from handlers.fallback import router as fallback_router
 from database import (
     create_orders_table,
     orders_items_table,
@@ -25,8 +24,7 @@ dp.include_router(start_router)
 dp.include_router(catalog_router)
 dp.include_router(cart_router)
 dp.include_router(order_router)
-dp.include_router(echo_router)
-
+dp.include_router(fallback_router)
 
 async def main():
     create_orders_table()

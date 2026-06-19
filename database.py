@@ -29,6 +29,28 @@ def add_product(product_id, name, price, category, photo=None):
 
  db.close() 
 
+def get_order_by_id(order_id):
+    conn = sqlite3.connect("shop.db")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT 
+            id,
+            full_name,
+            username,
+            user_id,
+            total_price,
+            status,
+            created_at
+        FROM orders
+        WHERE id = ?
+    """, (order_id,))
+
+    order = cursor.fetchone()
+    conn.close()
+
+    return order
+
 
 def get_products_by_category(category):
     db = sqlite3.connect("shop.db")
@@ -163,16 +185,17 @@ def get_orders(limit=10):
     cursor.execute("""
         SELECT 
             id,
-            user_id,
-            username,
             full_name,
+            username,
+            user_id,
             total_price,
-            created_at,
-            status
+            status,
+            created_at
         FROM orders
         ORDER BY id DESC
         LIMIT ?
     """, (limit,))
+
 
     orders = cursor.fetchall()
 
@@ -189,12 +212,12 @@ def get_orders_by_status(status, limit=10):
     cursor.execute("""
         SELECT 
             id,
-            user_id,
-            username,
             full_name,
+            username,
+            user_id,
             total_price,
-            created_at,
-            status
+            status,
+            created_at
         FROM orders
         WHERE status = ?
         ORDER BY id DESC
@@ -257,6 +280,31 @@ def update_order_status(order_id, status):
     conn.close()
 
 
+def normalize_order_statuses():
+    db = sqlite3.connect("shop.db")
+    cursor = db.cursor()
+
+    cursor.execute("""
+        UPDATE orders
+        SET status = 'new'
+        WHERE status = '🆕 новый'
+    """)
+
+    cursor.execute("""
+        UPDATE orders
+        SET status = 'done'
+        WHERE status = '✅ выполнен'
+    """)
+
+    cursor.execute("""
+        UPDATE orders
+        SET status = 'cancelled'
+        WHERE status = '❌ отменён'
+    """)
+
+    db.commit()
+    db.close()
+
 
 products = [
     ("p1", "🍔 Classic", 690, "burgers", "images/classic.jpg"),
@@ -270,10 +318,6 @@ products = [
     ("p9", "💧 Water 0.5", 70, "drinks", "images/water.png"),
 ]
 
-for product in products:
-    add_product(*product)
-
-print(get_products_by_category("burgers"))
 
 
 
