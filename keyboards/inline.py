@@ -211,7 +211,7 @@ def cart_inline_kb(cart: dict):
 
         name = product[1]
 
-    buttons.append(
+        buttons.append(
         [
             InlineKeyboardButton(
                 text=f"❌ Убрать {name} x{quantity}",
